@@ -62,7 +62,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         AppDelegate.instance = self
         AppDelegate.modifierManager = ModifierManager()
         
-        cycleController = CyclePanelController()
+        cycleController = CyclePanelController(modifierManager: AppDelegate.modifierManager)
         shortcutManager = ShortcutController(cycleController, AppDelegate.profileManager)
         windowManager = PreferencesController()
         
