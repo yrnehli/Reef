@@ -146,24 +146,20 @@ final class ModifierManager: ObservableObject {
         profileEnabledStored = profileIsEnabled
 
         for number in 0...9 {
-            for variant in numberShortcutVariants {
-                let key = variant.keys[number]
+            KeyboardShortcuts.setShortcut(
+                bindIsEnabled ? .init(numberKeys[number], modifiers: bindMods) : nil,
+                for: .bindShortcuts[number]
+            )
 
-                KeyboardShortcuts.setShortcut(
-                    bindIsEnabled ? .init(key, modifiers: bindMods) : nil,
-                    for: variant.bindNames[number]
-                )
+            KeyboardShortcuts.setShortcut(
+                activateIsEnabled ? .init(numberKeys[number], modifiers: activateMods) : nil,
+                for: .activateShortcuts[number]
+            )
 
-                KeyboardShortcuts.setShortcut(
-                    activateIsEnabled ? .init(key, modifiers: activateMods) : nil,
-                    for: variant.activateNames[number]
-                )
-
-                KeyboardShortcuts.setShortcut(
-                    profileIsEnabled ? .init(key, modifiers: profileMods) : nil,
-                    for: variant.profileNames[number]
-                )
-            }
+            KeyboardShortcuts.setShortcut(
+                profileIsEnabled ? .init(numberKeys[number], modifiers: profileMods) : nil,
+                for: .profileShortcuts[number]
+            )
         }
     }
 }

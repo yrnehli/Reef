@@ -13,30 +13,19 @@ let numberKeys: [KeyboardShortcuts.Key] = [
     .five, .six, .seven, .eight, .nine
 ]
 
-let keypadNumberKeys: [KeyboardShortcuts.Key] = [
-    .keypad0, .keypad1, .keypad2, .keypad3, .keypad4,
-    .keypad5, .keypad6, .keypad7, .keypad8, .keypad9
-]
-
-let numberShortcutVariants: [(
-    keys: [KeyboardShortcuts.Key],
-    bindNames: [KeyboardShortcuts.Name],
-    activateNames: [KeyboardShortcuts.Name],
-    profileNames: [KeyboardShortcuts.Name]
-)] = [
-    (
-        keys: numberKeys,
-        bindNames: (0...9).map { KeyboardShortcuts.Name("bind\($0)") },
-        activateNames: (0...9).map { KeyboardShortcuts.Name("activate\($0)") },
-        profileNames: (0...9).map { KeyboardShortcuts.Name("profile\($0)") }
-    ),
-    (
-        keys: keypadNumberKeys,
-        bindNames: (0...9).map { KeyboardShortcuts.Name("keypadBind\($0)") },
-        activateNames: (0...9).map { KeyboardShortcuts.Name("keypadActivate\($0)") },
-        profileNames: (0...9).map { KeyboardShortcuts.Name("keypadProfile\($0)") }
-    )
-]
+extension KeyboardShortcuts.Name {
+    static let bindShortcuts: [KeyboardShortcuts.Name] = (0...9).map { number in
+        Self("bind\(number)")
+    }
+    
+    static let activateShortcuts: [KeyboardShortcuts.Name] = (0...9).map { number in
+        Self("activate\(number)")
+    }
+    
+    static let profileShortcuts: [KeyboardShortcuts.Name] = (0...9).map { number in
+        Self("profile\(number)")
+    }
+}
 
 @MainActor
 final class ShortcutController {
@@ -52,18 +41,16 @@ final class ShortcutController {
     
     private func setupShortcuts() {
         for number in 0...9 {
-            for variant in numberShortcutVariants {
-                KeyboardShortcuts.onKeyUp(for: variant.bindNames[number]) {
-                    self.handleBind(number: number)
-                }
-
-                KeyboardShortcuts.onKeyDown(for: variant.activateNames[number]) {
-                    self.handleActivate(number: number)
-                }
-
-                KeyboardShortcuts.onKeyDown(for: variant.profileNames[number]) {
-                    self.handleProfile(number: number)
-                }
+            KeyboardShortcuts.onKeyUp(for: .bindShortcuts[number]) {
+                self.handleBind(number: number)
+            }
+            
+            KeyboardShortcuts.onKeyDown(for: .activateShortcuts[number]) {
+                self.handleActivate(number: number)
+            }
+            
+            KeyboardShortcuts.onKeyDown(for: .profileShortcuts[number]) {
+                self.handleProfile(number: number)
             }
         }
     }
