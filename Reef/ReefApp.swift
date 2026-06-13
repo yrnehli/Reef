@@ -13,12 +13,14 @@ import ServiceManagement
 struct ReefApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var profileManager: ProfileManager
+    @StateObject private var iconTracker: FrontmostAppTracker
     @StateObject private var sparkleConnector = SparkleConnector()
     @AppStorage("launchOnLogin") private var launchOnLogin = true
-    
+
     init() {
         let profileManager = ProfileManager()
         _profileManager = StateObject(wrappedValue: profileManager)
+        _iconTracker = StateObject(wrappedValue: FrontmostAppTracker(profileManager: profileManager))
         AppDelegate.profileManager = profileManager
         
         // Sync launch at login state with system
@@ -42,8 +44,7 @@ struct ReefApp: App {
                 .environmentObject(profileManager)
                 .environmentObject(sparkleConnector)
         } label: {
-            Image("menu_placeholder")
-                .renderingMode(.template)
+            MenuBarLabel(profileManager: profileManager, tracker: iconTracker)
         }
     }
 }
