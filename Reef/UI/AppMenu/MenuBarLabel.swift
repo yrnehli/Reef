@@ -2,26 +2,35 @@
 //  MenuBarLabel.swift
 //  Reef
 //
-//  The dynamic menu-bar label showing `profile | app` (e.g. `1 | 3`).
-//  A dash is shown for either part when it has no number.
+//  The menu-bar label: the Reef glyph followed by the current profile's
+//  name and number (e.g. "Coding (1)"), or just the name when the profile
+//  has no number assigned.
 //
 
 import SwiftUI
 
 struct MenuBarLabel: View {
     @ObservedObject var profileManager: ProfileManager
-    @ObservedObject var tracker: FrontmostAppTracker
 
-    private var profileStr: String {
-        profileManager.currentProfile?.profileNumber.map(String.init) ?? "-"
+    static func labelText(for profile: Profile?) -> String {
+        guard let profile else { return "" }
+        if let number = profile.profileNumber {
+            return "\(profile.name) (\(number))"
+        }
+        return profile.name
     }
 
-    private var appStr: String {
-        tracker.frontmostSlot.map(String.init) ?? "-"
+    private var text: String {
+        Self.labelText(for: profileManager.currentProfile)
     }
 
     var body: some View {
-        Text("\(profileStr) | \(appStr)")
-            .monospacedDigit()
+        HStack(spacing: 4) {
+            Image("menu_placeholder")
+                .renderingMode(.template)
+            if !text.isEmpty {
+                Text(text)
+            }
+        }
     }
 }
