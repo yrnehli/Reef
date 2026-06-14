@@ -46,6 +46,8 @@ extension KeyboardShortcuts.Name {
     static let profileKeypadShortcuts: [KeyboardShortcuts.Name] = (0...9).map { number in
         Self("profileKeypad\(number)")
     }
+    
+    static let cycleCurrentApp = Self("cycleCurrentApp")
 }
 
 @MainActor
@@ -81,6 +83,10 @@ final class ShortcutController {
                     self.handleProfile(number: number)
                 }
             }
+        }
+
+        KeyboardShortcuts.onKeyDown(for: .cycleCurrentApp) {
+            self.handleCycleCurrentApp()
         }
     }
     
@@ -128,6 +134,24 @@ final class ShortcutController {
         cycleController.showSwitcher(for: binding, startIndex: startIndex)
     }
     
+    private func handleCycleCurrentApp() {
+        // If the panel is already visible, just cycle. Re-reading the front
+        // application here would return Reef, since showing the switcher
+        // activates our own panel.
+        if cycleController.panel.isVisible {
+            cycleController.cycleNext()
+            return
+        }
+
+        guard let frontApp = Application.getFrontApplication() else {
+            NSSound.beep()
+            return
+        }
+
+        // Start at the second window so the first Tab moves off the current window.
+        cycleController.showSwitcher(for: frontApp, startIndex: 1)
+    }
+
     func handleProfile(number: Int) {
         guard let profileID = profileManager.profileID(forNumber: number) else {
             NSSound.beep()
