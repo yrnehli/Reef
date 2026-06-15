@@ -6,6 +6,7 @@ The macOS window manager that gives every app its own Alt-Tab.
 
 [Download for macOS](https://getreef.app) · [GitHub Releases](https://github.com/gouwsxander/Reef/releases/latest) (Requires macOS 14.6+)
 
+[How we made Reef (YouTube)](https://youtu.be/niRCi5zJvHU)
 
 ## Key Features
 
