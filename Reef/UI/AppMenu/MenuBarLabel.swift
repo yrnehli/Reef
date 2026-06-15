@@ -2,21 +2,18 @@
 //  MenuBarLabel.swift
 //  Reef
 //
-//  The menu-bar label: the Reef glyph followed by the current profile's
-//  name and number (e.g. "Coding (1)"), or just the name when the profile
-//  has no number assigned.
+//  The menu-bar label: the Reef glyph, optionally followed by the current
+//  profile name.
 //
 
 import SwiftUI
 
 struct MenuBarLabel: View {
     @ObservedObject var profileManager: ProfileManager
+    @AppStorage("showActiveProfileInMenuBar") private var showActiveProfileInMenuBar = false
 
     static func labelText(for profile: Profile?) -> String {
         guard let profile else { return "" }
-        if let number = profile.profileNumber {
-            return "\(profile.name) (\(number))"
-        }
         return profile.name
     }
 
@@ -28,7 +25,7 @@ struct MenuBarLabel: View {
         HStack(spacing: 4) {
             Image("menu_placeholder")
                 .renderingMode(.template)
-            if !text.isEmpty {
+            if showActiveProfileInMenuBar, !text.isEmpty {
                 Text(text)
             }
         }
