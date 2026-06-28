@@ -60,6 +60,17 @@ final class ProfileManager: ObservableObject {
         }
     }
 
+    @discardableResult
+    func duplicateProfile(_ profile: Profile) -> Profile {
+        let copy = Profile(
+            name: "\(profile.name) Copy",
+            numberOrder: profile.numberOrder,
+            bindings: profile.bindings
+        )
+        profiles.append(copy)
+        return copy
+    }
+
     // Assigns or removes a profile number. Enforces uniqueness — returns false
     // if the requested number is already taken by another profile.
     @discardableResult

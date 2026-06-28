@@ -52,7 +52,7 @@ struct PreferencesProfilesView: View {
 
                         if let number = profile.profileNumber {
                             Spacer()
-                            
+
                             Text("\(modifierManager.profileModifierSymbols)\(number)")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
@@ -60,6 +60,12 @@ struct PreferencesProfilesView: View {
                         }
                     }
                     .tag(profile.id)
+                    .contextMenu {
+                        Button("Duplicate Profile") {
+                            let copy = profileManager.duplicateProfile(profile)
+                            selectedProfileID = copy.id
+                        }
+                    }
                 }
                 
                 Divider()
