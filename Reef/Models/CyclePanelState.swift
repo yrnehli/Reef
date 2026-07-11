@@ -86,6 +86,16 @@ final class CyclePanelState: ObservableObject {
         selectedIndex = (selectedIndex + 1) % items.count
     }
     
+    func removeCurrentWindow() {
+        guard case .window = currentItem else { return }
+        items.remove(at: selectedIndex)
+        if items.isEmpty {
+            selectedIndex = 0
+        } else if selectedIndex >= items.count {
+            selectedIndex = items.count - 1
+        }
+    }
+    
     func reset() {
         items = []
         selectedIndex = 0

@@ -173,6 +173,23 @@ final class CyclePanelController: NSObject {
         }
     }
     
+    // Called when user presses W to close the currently selected window.
+    private func closeSelectedWindow() {
+        guard let window = state.currentWindow else { return }
+        
+        if !window.close() {
+            NSSound.beep()
+            return
+        }
+        
+        state.removeCurrentWindow()
+        if state.items.isEmpty {
+            hideSwitcher()
+        } else {
+            updatePanelSize()
+        }
+    }
+    
     private func hideSwitcher() {
         removeFlagsMonitor()
         removeKeyDownMonitor()
@@ -234,6 +251,14 @@ final class CyclePanelController: NSObject {
             if self.panel.isVisible, event.keyCode == 53 {
                 Task { @MainActor in
                     self.hideSwitcher()
+                }
+                return nil
+            }
+
+            // W closes the currently selected window.
+            if self.panel.isVisible, event.keyCode == 13 {
+                Task { @MainActor in
+                    self.closeSelectedWindow()
                 }
                 return nil
             }

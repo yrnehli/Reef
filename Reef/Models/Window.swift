@@ -38,6 +38,20 @@ class Window: Identifiable {
         }
     }
     
+    @discardableResult
+    func close() -> Bool {
+        guard let closeButton: AXUIElement = element.getAttributeValue(.closeButton) else {
+            return false
+        }
+        
+        do {
+            try closeButton.performAction(.press)
+            return true
+        } catch {
+            return false
+        }
+    }
+    
     static func getFrontWindow() -> Window? {
         guard let frontApplication = Application.getFrontApplication() else {
             return nil
