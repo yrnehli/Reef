@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Combine
 import KeyboardShortcuts
 
 @MainActor
@@ -60,8 +61,29 @@ final class ModifierManager: ObservableObject {
     var activateEnabled: Bool { !activateModifiers.isEmpty }
     var profileEnabled: Bool { !profileModifiers.isEmpty }
 
-    
-    init() {
+    private weak var profileManager: ProfileManager?
+    private var cancellables: Set<AnyCancellable> = []
+
+    init(profileManager: ProfileManager? = nil) {
+        self.profileManager = profileManager
+
+        // Re-register hotkeys whenever bindings or profile-number assignments
+        // change (bind/unbind, Preferences edits, profile switches) so that only
+        // meaningful numbers hijack their global hotkey. Dispatched async so the
+        // published change is committed before we read the updated state.
+        if let profileManager {
+            Publishers.Merge(
+                profileManager.$profiles.map { _ in () },
+                profileManager.$currentProfileID.map { _ in () }
+            )
+            .sink { [weak self] in
+                Task { @MainActor in
+                    self?.updateShortcuts()
+                }
+            }
+            .store(in: &cancellables)
+        }
+
         // Initialize shortcuts with saved modifiers on first launch
         updateShortcuts()
     }
@@ -158,14 +180,23 @@ final class ModifierManager: ObservableObject {
         activateEnabledStored = activateIsEnabled
         profileEnabledStored = profileIsEnabled
 
+        let bindings = profileManager?.currentProfile?.bindings ?? []
+
         for number in 0...9 {
+            // Bind hotkeys stay live for every number so an empty slot can still
+            // be assigned an app.
             setNumberShortcut(number, enabled: bindIsEnabled, modifiers: bindMods,
                               mainName: .bindShortcuts[number], keypadName: .bindKeypadShortcuts[number])
 
-            setNumberShortcut(number, enabled: activateIsEnabled, modifiers: activateMods,
+            // Only hijack activate/profile hotkeys for numbers that actually do
+            // something; otherwise let the keystroke fall through to the OS.
+            let hasBinding = number < bindings.count && bindings[number] != nil
+            let hasProfile = profileManager?.profileID(forNumber: number) != nil
+
+            setNumberShortcut(number, enabled: activateIsEnabled && hasBinding, modifiers: activateMods,
                               mainName: .activateShortcuts[number], keypadName: .activateKeypadShortcuts[number])
 
-            setNumberShortcut(number, enabled: profileIsEnabled, modifiers: profileMods,
+            setNumberShortcut(number, enabled: profileIsEnabled && hasProfile, modifiers: profileMods,
                               mainName: .profileShortcuts[number], keypadName: .profileKeypadShortcuts[number])
         }
 

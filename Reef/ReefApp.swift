@@ -59,7 +59,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.instance = self
-        AppDelegate.modifierManager = ModifierManager()
+        AppDelegate.modifierManager = ModifierManager(profileManager: AppDelegate.profileManager)
         
         cycleController = CyclePanelController(modifierManager: AppDelegate.modifierManager)
         shortcutManager = ShortcutController(cycleController, AppDelegate.profileManager)
