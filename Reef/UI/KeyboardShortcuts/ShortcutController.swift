@@ -54,6 +54,7 @@ extension KeyboardShortcuts.Name {
 final class ShortcutController {
     private let cycleController: CyclePanelController
     private let profileManager: ProfileManager
+    private var cycleCurrentAppRepeatTimer: Timer?
     
     init(_ cycleController: CyclePanelController, _ profileManager: ProfileManager) {
         self.cycleController = cycleController
@@ -85,8 +86,13 @@ final class ShortcutController {
             }
         }
 
+        // Carbon hotkeys do not deliver key-repeat; synthesize hold-to-cycle with a timer.
         KeyboardShortcuts.onKeyDown(for: .cycleCurrentApp) {
             self.handleCycleCurrentApp()
+            self.startCycleCurrentAppRepeat()
+        }
+        KeyboardShortcuts.onKeyUp(for: .cycleCurrentApp) {
+            self.stopCycleCurrentAppRepeat()
         }
     }
     
@@ -150,6 +156,40 @@ final class ShortcutController {
 
         // Start at the second window so the first Tab moves off the current window.
         cycleController.showSwitcher(for: frontApp, startIndex: 1)
+    }
+
+    private func startCycleCurrentAppRepeat() {
+        stopCycleCurrentAppRepeat()
+
+        let timer = Timer(timeInterval: NSEvent.keyRepeatDelay, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.beginCycleCurrentAppFastRepeat()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        cycleCurrentAppRepeatTimer = timer
+    }
+
+    private func beginCycleCurrentAppFastRepeat() {
+        stopCycleCurrentAppRepeat()
+
+        let timer = Timer(timeInterval: NSEvent.keyRepeatInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                guard self.cycleController.panel.isVisible else {
+                    self.stopCycleCurrentAppRepeat()
+                    return
+                }
+                self.cycleController.cycleNext()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        cycleCurrentAppRepeatTimer = timer
+    }
+
+    private func stopCycleCurrentAppRepeat() {
+        cycleCurrentAppRepeatTimer?.invalidate()
+        cycleCurrentAppRepeatTimer = nil
     }
 
     func handleProfile(number: Int) {

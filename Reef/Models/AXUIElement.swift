@@ -58,3 +58,56 @@ extension AXError: @retroactive Error {}
 // Private Core Accessibility API
 @_silgen_name("_AXUIElementGetWindow") @discardableResult
 func _AXUIElementGetWindow(_ axUiElement: AXUIElement, _ wid: UnsafeMutablePointer<CGWindowID>) -> AXError
+
+/// Creates an AXUIElement from a remote token. Used to reach windows that are not
+/// exposed via `kAXWindowsAttribute` (notably windows on other Spaces).
+@_silgen_name("_AXUIElementCreateWithRemoteToken")
+func _AXUIElementCreateWithRemoteToken(_ token: CFData) -> Unmanaged<AXUIElement>?
+
+extension AXUIElement {
+    /// Resolve AX elements for specific `CGWindowID`s that are missing from the
+    /// app's current-Space `kAXWindows` list (other Spaces / inactive tabs).
+    /// Scans AX element IDs via `_AXUIElementCreateWithRemoteToken` until all
+    /// targets are found or `budgetMilliseconds` elapses.
+    static func windowsByBruteForce(
+        pid: pid_t,
+        targetWindowIDs: Set<CGWindowID>,
+        budgetMilliseconds: Double = 300
+    ) -> [CGWindowID: AXUIElement] {
+        var found: [CGWindowID: AXUIElement] = [:]
+        guard !targetWindowIDs.isEmpty else { return found }
+
+        // Token layout (20 bytes), matching AltTab / WindowServer conventions:
+        // pid (4) + 0 (4) + magic 0x636f636f "coco" (4) + AXUIElementID (8)
+        var remoteToken = Data(count: 20)
+        remoteToken.replaceSubrange(0..<4, with: withUnsafeBytes(of: pid) { Data($0) })
+        remoteToken.replaceSubrange(4..<8, with: withUnsafeBytes(of: Int32(0)) { Data($0) })
+        remoteToken.replaceSubrange(8..<12, with: withUnsafeBytes(of: Int32(0x636f636f)) { Data($0) })
+
+        let started = ContinuousClock.now
+        var elementID: UInt64 = 0
+
+        while found.count < targetWindowIDs.count {
+            remoteToken.replaceSubrange(12..<20, with: withUnsafeBytes(of: elementID) { Data($0) })
+
+            if let candidate = _AXUIElementCreateWithRemoteToken(remoteToken as CFData)?.takeRetainedValue(),
+               let windowID = candidate.getWindowID(),
+               targetWindowIDs.contains(windowID),
+               found[windowID] == nil {
+                found[windowID] = candidate
+            }
+
+            let elapsed = ContinuousClock.now - started
+            if elapsed >= .milliseconds(budgetMilliseconds) {
+                break
+            }
+
+            if elementID == UInt64.max {
+                break
+            }
+            elementID &+= 1
+        }
+
+        return found
+    }
+}
