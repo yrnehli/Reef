@@ -9,6 +9,8 @@ import SwiftUI
 
 struct CyclePanelView: View {
     @ObservedObject var state: CyclePanelState
+    var onHoverIndex: (Int) -> Void = { _ in }
+    var onActivateIndex: (Int) -> Void = { _ in }
 
     private let headerPadding: Double = 12
     private let maxNonScrollingRows: Int = 5
@@ -21,6 +23,26 @@ struct CyclePanelView: View {
             return action.title
         case .app(let application):
             return application.title
+        }
+    }
+
+    @ViewBuilder
+    private func rows() -> some View {
+        ForEach(Array(state.items.enumerated()), id: \.offset) { index, item in
+            CyclePanelRow(
+                title: itemTitle(item),
+                isSelected: index == state.selectedIndex
+            )
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering {
+                    onHoverIndex(index)
+                }
+            }
+            .onTapGesture {
+                onActivateIndex(index)
+            }
+            .id(index)
         }
     }
     
@@ -40,30 +62,18 @@ struct CyclePanelView: View {
             // Window list
             if state.items.count <= maxNonScrollingRows {
                 VStack(spacing: 4) {
-                    ForEach(Array(state.items.enumerated()), id: \.offset) { index, item in
-                        CyclePanelRow(
-                            title: itemTitle(item),
-                            isSelected: index == state.selectedIndex
-                        )
-                        .id(index)
-                    }
+                    rows()
                 }
                 .padding(8)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(spacing: 4) {
-                            ForEach(Array(state.items.enumerated()), id: \.offset) { index, item in
-                                CyclePanelRow(
-                                    title: itemTitle(item),
-                                    isSelected: index == state.selectedIndex
-                                )
-                                .id(index)
-                            }
+                            rows()
                         }
                         .padding(8)
                     }
-                    .onChange(of: state.selectedIndex) {
+                    .onChange(of: state.keyboardSelectionGeneration) {
                         withAnimation(.easeInOut(duration: 0.15)) {
                             proxy.scrollTo(state.selectedIndex, anchor: .center)
                         }
@@ -88,9 +98,6 @@ struct CyclePanelRow: View {
             Circle()
                 .fill(isSelected ? Color.accentColor : Color.clear)
                 .frame(width: 6, height: 6)
-//            Image(systemName: "fish.fill")
-//                .opacity(isSelected ? 1.0 : 0.0)
-//                .frame(width: 6, height: 6)
             
             Text(title)
                 .foregroundColor(isSelected ? .white : .primary)

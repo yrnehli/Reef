@@ -38,6 +38,8 @@ final class CyclePanelState: ObservableObject {
     @Published var items: [CyclePanelItem] = []
     @Published var selectedIndex: Int = 0
     @Published var mode: CyclePanelMode = .windows
+    /// Bumped only by keyboard cycling so the list can scroll without fighting hover selection.
+    @Published private(set) var keyboardSelectionGeneration: UInt = 0
     
     var windows: [Window] {
         items.compactMap { item in
@@ -109,11 +111,18 @@ final class CyclePanelState: ObservableObject {
     func cycleNext() {
         guard !items.isEmpty else { return }
         selectedIndex = (selectedIndex + 1) % items.count
+        keyboardSelectionGeneration &+= 1
     }
 
     func cyclePrevious() {
         guard !items.isEmpty else { return }
         selectedIndex = (selectedIndex - 1 + items.count) % items.count
+        keyboardSelectionGeneration &+= 1
+    }
+
+    func selectIndex(_ index: Int) {
+        guard items.indices.contains(index) else { return }
+        selectedIndex = index
     }
     
     func removeCurrentWindow() {
