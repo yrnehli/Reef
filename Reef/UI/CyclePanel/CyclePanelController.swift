@@ -14,11 +14,16 @@ final class CyclePanelController: NSObject {
     private(set) var panel: CyclePanel!
     private let state = CyclePanelState()
     private let modifierManager: ModifierManager
+    private let mruTracker: AppMRUTracker
     private var localFlagsMonitor: Any?
     private var globalFlagsMonitor: Any?
     private var keyDownMonitor: Any?
     private var currentApplication: Application?
-    private var panelAnchorCenter: CGPoint?
+    private var panelAnchorTopCenter: CGPoint?
+    private var isCleaningUp = false
+
+    /// Notifies the ⌘Tab interceptor when the app-switcher panel is shown/hidden.
+    var appSwitcherVisibilityDidChange: ((Bool) -> Void)?
 
     private let panelContentWidth: CGFloat = 400
     private let maxPanelFrameHeightCap: CGFloat = 520
@@ -35,9 +40,14 @@ final class CyclePanelController: NSObject {
         // Minimum height that still matches the layout for one row.
         headerHeight + dividerHeight + (listVerticalPadding * 2) + rowHeight
     }
+
+    private var excludedAppBundleIDs: Set<String> {
+        Set([Bundle.main.bundleIdentifier].compactMap { $0 })
+    }
     
-    init(modifierManager: ModifierManager) {
+    init(modifierManager: ModifierManager, mruTracker: AppMRUTracker) {
         self.modifierManager = modifierManager
+        self.mruTracker = mruTracker
         super.init()
         createPanel()
     }
@@ -58,6 +68,10 @@ final class CyclePanelController: NSObject {
             hostingView.topAnchor.constraint(equalTo: containerView.topAnchor),
             hostingView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
         ])
+
+        panel.onDidResignKey = { [weak self] in
+            self?.resetSwitcherState()
+        }
     }
     
     // Called when user presses the configured window-switching shortcut.
@@ -78,20 +92,76 @@ final class CyclePanelController: NSObject {
             state.selectedIndex = startIndex
         }
         
+        presentPanelIfNeeded()
+    }
+
+    /// Entry point for the ⌘Tab / ⌘⇧Tab app switcher.
+    func handleCommandTab(reversed: Bool) {
+        if panel.isVisible, state.mode == .apps {
+            if reversed {
+                state.cyclePrevious()
+            } else {
+                state.cycleNext()
+            }
+            return
+        }
+
+        let apps = Application.appsWithOpenWindows(
+            excludingBundleIDs: excludedAppBundleIDs,
+            mruOrder: mruTracker.orderedBundleIDs
+        )
+        guard !apps.isEmpty else { return }
+
+        let startIndex: Int
+        if apps.count == 1 {
+            startIndex = 0
+        } else if reversed {
+            startIndex = apps.count - 1
+        } else {
+            startIndex = 1
+        }
+
+        showAppSwitcher(apps: apps, startIndex: startIndex)
+    }
+
+    func showAppSwitcher(apps: [Application], startIndex: Int = 0) {
+        currentApplication = nil
+        state.setApps(apps)
+
+        if startIndex > 0 && startIndex < state.items.count {
+            state.selectedIndex = startIndex
+        }
+
+        presentPanelIfNeeded()
+    }
+
+    private func presentPanelIfNeeded() {
         if !panel.isVisible {
-            panel.center()
-            panelAnchorCenter = CGPoint(x: panel.frame.midX, y: panel.frame.midY)
+            panelAnchorTopCenter = defaultPanelAnchorTopCenter()
+            // Size first so the frame matches content, pinned so the top stays put.
             updatePanelSize()
             panel.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             installFlagsMonitor()
             installKeyDownMonitor()
         } else {
-            if panelAnchorCenter == nil {
-                panelAnchorCenter = CGPoint(x: panel.frame.midX, y: panel.frame.midY)
+            if panelAnchorTopCenter == nil {
+                panelAnchorTopCenter = defaultPanelAnchorTopCenter()
             }
             updatePanelSize()
         }
+
+        appSwitcherVisibilityDidChange?(state.mode == .apps && panel.isVisible)
+    }
+
+    /// Horizontally centered; top edge at 1/4 of the screen height from the top.
+    private func defaultPanelAnchorTopCenter() -> CGPoint {
+        let visible = (panel.screen ?? NSScreen.main)?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        return CGPoint(
+            x: visible.midX,
+            y: visible.minY + visible.height * (3.0 / 4.0)
+        )
     }
 
     private func updatePanelSize() {
@@ -112,11 +182,11 @@ final class CyclePanelController: NSObject {
         let targetContentRect = NSRect(x: 0, y: 0, width: panelContentWidth, height: clampedContentHeight)
         let targetFrameSize = panel.frameRect(forContentRect: targetContentRect).size
 
-        // Keep the panel pinned to the same center while the switcher shortcut is held.
-        let center = panelAnchorCenter ?? CGPoint(x: panel.frame.midX, y: panel.frame.midY)
+        // Keep the panel's top edge fixed while content height changes.
+        let anchor = panelAnchorTopCenter ?? CGPoint(x: panel.frame.midX, y: panel.frame.maxY)
         let newOrigin = CGPoint(
-            x: center.x - targetFrameSize.width / 2,
-            y: center.y - targetFrameSize.height / 2
+            x: anchor.x - targetFrameSize.width / 2,
+            y: anchor.y - targetFrameSize.height
         )
         let newFrame = NSRect(origin: newOrigin, size: targetFrameSize)
 
@@ -127,9 +197,13 @@ final class CyclePanelController: NSObject {
     func cycleNext() {
         state.cycleNext()
     }
+
+    func cyclePrevious() {
+        state.cyclePrevious()
+    }
     
     func isShowingSwitcher(for application: Application) -> Bool {
-        guard let currentApplication else { return false }
+        guard state.mode == .windows, let currentApplication else { return false }
         
         if let currentBundleID = currentApplication.bundleIdentifier,
            let targetBundleID = application.bundleIdentifier {
@@ -154,6 +228,13 @@ final class CyclePanelController: NSObject {
         switch item {
         case .window(let window):
             window.focus()
+            hideSwitcher()
+        case .app(let application):
+            if let window = application.getFocusedWindow() ?? application.getFirstWindow() {
+                window.focus()
+            } else {
+                application.activate()
+            }
             hideSwitcher()
         case .action:
             let application = currentApplication
@@ -189,14 +270,86 @@ final class CyclePanelController: NSObject {
             updatePanelSize()
         }
     }
+
+    private func closeSelectedAppWindow() {
+        guard let application = state.currentApp else { return }
+
+        guard let window = application.getFocusedWindow() ?? application.getFirstWindow() else {
+            NSSound.beep()
+            return
+        }
+
+        if !window.close() {
+            NSSound.beep()
+            return
+        }
+
+        if application.getWindows().isEmpty {
+            state.removeCurrentItem()
+            if state.items.isEmpty {
+                hideSwitcher()
+            } else {
+                updatePanelSize()
+            }
+        }
+    }
+
+    private func quitSelectedApp() {
+        guard let application = state.currentApp,
+              let runningApplication = application.runningApplication
+        else {
+            NSSound.beep()
+            return
+        }
+
+        if !runningApplication.terminate() {
+            NSSound.beep()
+            return
+        }
+
+        state.removeCurrentItem()
+        if state.items.isEmpty {
+            hideSwitcher()
+        } else {
+            updatePanelSize()
+        }
+    }
     
-    private func hideSwitcher() {
+    /// Dismisses without activating (Escape / interceptor).
+    func dismissSwitcher() {
+        hideSwitcher()
+    }
+
+    /// Quit selected app from the ⌘Tab event tap (Q while switcher is open).
+    func quitSelectedAppFromHotkey() {
+        guard panel.isVisible, state.mode == .apps else { return }
+        quitSelectedApp()
+    }
+
+    /// Close selected app's front window from the ⌘Tab event tap (W while switcher is open).
+    func closeSelectedAppWindowFromHotkey() {
+        guard panel.isVisible, state.mode == .apps else { return }
+        closeSelectedAppWindow()
+    }
+
+    private func resetSwitcherState() {
+        guard !isCleaningUp else { return }
+        isCleaningUp = true
+        defer { isCleaningUp = false }
+
         removeFlagsMonitor()
         removeKeyDownMonitor()
-        panel.orderOut(nil)
         state.reset()
         currentApplication = nil
-        panelAnchorCenter = nil
+        panelAnchorTopCenter = nil
+        appSwitcherVisibilityDidChange?(false)
+    }
+
+    private func hideSwitcher() {
+        resetSwitcherState()
+        if panel.isVisible {
+            panel.orderOut(nil)
+        }
     }
     
     private func installFlagsMonitor() {
@@ -217,10 +370,19 @@ final class CyclePanelController: NSObject {
         }
     }
 
+    private func requiredReleaseModifiers() -> NSEvent.ModifierFlags {
+        switch state.mode {
+        case .apps:
+            return .command
+        case .windows:
+            return modifierManager.activateModifiers.intersection(Self.releaseModifierMask)
+        }
+    }
+
     private func activateIfSwitcherModifierWasReleased(_ modifierFlags: NSEvent.ModifierFlags) {
         guard panel.isVisible else { return }
 
-        let requiredModifiers = modifierManager.activateModifiers.intersection(Self.releaseModifierMask)
+        let requiredModifiers = requiredReleaseModifiers()
         guard !requiredModifiers.isEmpty else { return }
 
         let pressedModifiers = modifierFlags.intersection(Self.releaseModifierMask)
@@ -255,10 +417,23 @@ final class CyclePanelController: NSObject {
                 return nil
             }
 
-            // W closes the currently selected window.
+            // W closes the selected window (window mode) or the selected app's front window (app mode).
             if self.panel.isVisible, event.keyCode == 13 {
                 Task { @MainActor in
-                    self.closeSelectedWindow()
+                    switch self.state.mode {
+                    case .windows:
+                        self.closeSelectedWindow()
+                    case .apps:
+                        self.closeSelectedAppWindow()
+                    }
+                }
+                return nil
+            }
+
+            // Q quits the selected app (app mode only).
+            if self.panel.isVisible, self.state.mode == .apps, event.keyCode == 12 {
+                Task { @MainActor in
+                    self.quitSelectedApp()
                 }
                 return nil
             }

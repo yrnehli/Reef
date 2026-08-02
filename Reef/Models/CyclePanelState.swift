@@ -24,6 +24,12 @@ enum CyclePanelAction {
 enum CyclePanelItem {
     case window(Window)
     case action(CyclePanelAction)
+    case app(Application)
+}
+
+enum CyclePanelMode {
+    case windows
+    case apps
 }
 
 @MainActor
@@ -31,6 +37,7 @@ final class CyclePanelState: ObservableObject {
     @Published var applicationTitle: String = ""
     @Published var items: [CyclePanelItem] = []
     @Published var selectedIndex: Int = 0
+    @Published var mode: CyclePanelMode = .windows
     
     var windows: [Window] {
         items.compactMap { item in
@@ -66,28 +73,56 @@ final class CyclePanelState: ObservableObject {
         
         return nil
     }
+
+    var currentApp: Application? {
+        guard let currentItem else { return nil }
+
+        if case let .app(application) = currentItem {
+            return application
+        }
+
+        return nil
+    }
     
     func setApplication(_ application: Application) {
-        self.applicationTitle = application.title
+        mode = .windows
+        applicationTitle = application.title
         
         let windows = application.getWindows()
         if windows.isEmpty {
             let action: CyclePanelAction = application.isRunning ? .openWindow : .launchApp
-            self.items = [.action(action)]
+            items = [.action(action)]
         } else {
-            self.items = windows.map(CyclePanelItem.window)
+            items = windows.map(CyclePanelItem.window)
         }
         
-        self.selectedIndex = 0
+        selectedIndex = 0
+    }
+
+    func setApps(_ apps: [Application]) {
+        mode = .apps
+        applicationTitle = "Apps"
+        items = apps.map(CyclePanelItem.app)
+        selectedIndex = 0
     }
     
     func cycleNext() {
         guard !items.isEmpty else { return }
         selectedIndex = (selectedIndex + 1) % items.count
     }
+
+    func cyclePrevious() {
+        guard !items.isEmpty else { return }
+        selectedIndex = (selectedIndex - 1 + items.count) % items.count
+    }
     
     func removeCurrentWindow() {
         guard case .window = currentItem else { return }
+        removeCurrentItem()
+    }
+
+    func removeCurrentItem() {
+        guard !items.isEmpty, selectedIndex < items.count else { return }
         items.remove(at: selectedIndex)
         if items.isEmpty {
             selectedIndex = 0
@@ -100,5 +135,6 @@ final class CyclePanelState: ObservableObject {
         items = []
         selectedIndex = 0
         applicationTitle = ""
+        mode = .windows
     }
 }

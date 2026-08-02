@@ -19,6 +19,8 @@ struct CyclePanelView: View {
             return window.title
         case .action(let action):
             return action.title
+        case .app(let application):
+            return application.title
         }
     }
     

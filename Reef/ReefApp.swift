@@ -56,19 +56,49 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var cycleController: CyclePanelController!
     private var shortcutManager: ShortcutController!
     private var windowManager: PreferencesController!
+    private var mruTracker: AppMRUTracker!
+    private var commandTabInterceptor: CommandTabInterceptor!
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.instance = self
         AppDelegate.modifierManager = ModifierManager(profileManager: AppDelegate.profileManager)
-        
-        cycleController = CyclePanelController(modifierManager: AppDelegate.modifierManager)
+
+        mruTracker = AppMRUTracker()
+        mruTracker.start()
+
+        cycleController = CyclePanelController(
+            modifierManager: AppDelegate.modifierManager,
+            mruTracker: mruTracker
+        )
         shortcutManager = ShortcutController(cycleController, AppDelegate.profileManager)
         windowManager = PreferencesController()
+        commandTabInterceptor = CommandTabInterceptor()
+
+        cycleController.appSwitcherVisibilityDidChange = { [weak self] visible in
+            self?.commandTabInterceptor.isAppSwitcherVisible = visible
+        }
+
+        AppDelegate.modifierManager.appSwitcherEnabledDidChange = { [weak self] enabled in
+            self?.updateCommandTabInterceptor(enabled: enabled)
+        }
+        if AppDelegate.modifierManager.appSwitcherEnabled {
+            updateCommandTabInterceptor(enabled: true)
+        }
         
         NSApp.setActivationPolicy(.accessory)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        commandTabInterceptor?.stop()
+        mruTracker?.stop()
         AppDelegate.profileManager.saveNow()
+    }
+
+    private func updateCommandTabInterceptor(enabled: Bool) {
+        if enabled {
+            commandTabInterceptor.start(cycleController: cycleController)
+        } else {
+            commandTabInterceptor.stop()
+        }
     }
 }

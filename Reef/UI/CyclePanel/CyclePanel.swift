@@ -10,6 +10,9 @@ import SwiftUI
 
 
 final class CyclePanel: NSPanel, NSWindowDelegate {
+    /// Called when the panel resigns key (and orders out). Used to clear switcher state/monitors.
+    var onDidResignKey: (() -> Void)?
+
     init(contentRect: NSRect) {
         super.init(
             contentRect: contentRect,
@@ -70,5 +73,6 @@ final class CyclePanel: NSPanel, NSWindowDelegate {
     
     func windowDidResignKey(_ notification: Notification) {
         self.orderOut(nil)
+        onDidResignKey?()
     }
 }

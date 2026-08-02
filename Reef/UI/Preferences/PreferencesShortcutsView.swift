@@ -136,10 +136,20 @@ struct PreferencesShortcutsView: View {
                 .toggleStyle(.switch)
                 .disabled(!modifierManager.activateEnabled)
                 .opacity(modifierManager.activateEnabled ? 1 : 0.6)
+
+                Toggle(isOn: $modifierManager.appSwitcherEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Replace ⌘Tab with app switcher")
+                        Text("Show apps with an open window (not hidden or closed). Press Q to quit, W to close a window. Requires Accessibility.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .toggleStyle(.switch)
             }
         }
         .formStyle(.grouped)
-        .frame(height: !modifierManager.activateEnabled || !modifierManager.bindEnabled || !modifierManager.profileEnabled ? 480 : 445)
+        .frame(height: !modifierManager.activateEnabled || !modifierManager.bindEnabled || !modifierManager.profileEnabled ? 560 : 525)
         .alert("Reset shortcut modifiers?", isPresented: $showingResetConfirmation) {
             Button("Cancel", role: .cancel) {}
             Button("Reset", role: .destructive) {

@@ -43,6 +43,16 @@ final class ModifierManager: ObservableObject {
         didSet { updateShortcuts() }
     }
 
+    @AppStorage("appSwitcherEnabled") var appSwitcherEnabled = false {
+        didSet {
+            updateShortcuts()
+            appSwitcherEnabledDidChange?(appSwitcherEnabled)
+        }
+    }
+
+    /// Invoked when the ⌘Tab app-switcher preference changes so AppDelegate can start/stop the interceptor.
+    var appSwitcherEnabledDidChange: ((Bool) -> Void)?
+
     @AppStorage("profileEnabled") private var profileEnabledStored = true
     @AppStorage("profileControl") var profileControl = true {
         didSet { updateShortcuts() }
@@ -200,8 +210,13 @@ final class ModifierManager: ObservableObject {
                               mainName: .profileShortcuts[number], keypadName: .profileKeypadShortcuts[number])
         }
 
+        // When the ⌘Tab app switcher is on, it owns Command+Tab — don't also register
+        // cycle-current-app on bare ⌘Tab.
+        let cycleTabConflictsWithAppSwitcher = appSwitcherEnabled && activateMods == [.command]
         KeyboardShortcuts.setShortcut(
-            (cycleCurrentAppEnabled && activateIsEnabled) ? .init(.tab, modifiers: activateMods) : nil,
+            (cycleCurrentAppEnabled && activateIsEnabled && !cycleTabConflictsWithAppSwitcher)
+                ? .init(.tab, modifiers: activateMods)
+                : nil,
             for: .cycleCurrentApp
         )
     }

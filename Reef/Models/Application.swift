@@ -199,6 +199,50 @@ class Application {
         
         return Application(runningApplication)
     }
+
+    /// Running regular apps that currently expose at least one Accessibility window
+    /// on the current Space, excluding hidden apps and the given bundle IDs.
+    /// Sorted by `mruOrder` (front of list = most recently used).
+    static func appsWithOpenWindows(
+        excludingBundleIDs: Set<String> = [],
+        mruOrder: [String] = []
+    ) -> [Application] {
+        var apps: [Application] = []
+        var seenBundleIDs = Set<String>()
+
+        for runningApp in NSWorkspace.shared.runningApplications {
+            guard runningApp.activationPolicy == .regular,
+                  !runningApp.isHidden,
+                  !runningApp.isTerminated,
+                  let bundleID = runningApp.bundleIdentifier,
+                  !excludingBundleIDs.contains(bundleID),
+                  !seenBundleIDs.contains(bundleID)
+            else {
+                continue
+            }
+
+            let app = Application(runningApp)
+            guard !app.getWindows().isEmpty else {
+                continue
+            }
+
+            seenBundleIDs.insert(bundleID)
+            apps.append(app)
+        }
+
+        apps.sort { lhs, rhs in
+            let leftID = lhs.bundleIdentifier ?? ""
+            let rightID = rhs.bundleIdentifier ?? ""
+            let leftIndex = mruOrder.firstIndex(of: leftID) ?? Int.max
+            let rightIndex = mruOrder.firstIndex(of: rightID) ?? Int.max
+            if leftIndex != rightIndex {
+                return leftIndex < rightIndex
+            }
+            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        }
+
+        return apps
+    }
     
     static func activateOrLaunch(
         bundleIdentifier: String,
