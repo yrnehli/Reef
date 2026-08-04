@@ -56,17 +56,7 @@ final class CyclePanelController: NSObject {
         let contentRect = NSRect(x: 0, y: 0, width: panelContentWidth, height: 300)
         panel = CyclePanel(contentRect: contentRect)
         
-        let contentView = CyclePanelView(
-            state: state,
-            onHoverIndex: { [weak self] index in
-                self?.state.selectIndex(index)
-            },
-            onActivateIndex: { [weak self] index in
-                guard let self else { return }
-                self.state.selectIndex(index)
-                self.activateSelectedWindow()
-            }
-        )
+        let contentView = CyclePanelView(state: state)
         let hostingView = NSHostingView(rootView: contentView)
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         
