@@ -144,6 +144,9 @@ final class CyclePanelController: NSObject {
             NSApp.activate(ignoringOtherApps: true)
             installFlagsMonitor()
             installKeyDownMonitor()
+            // Modifier may already be up if the user released before monitors were installed
+            // (common on quick Alt/⌘Tab). Catch that with a snapshot check.
+            activateIfSwitcherModifierWasReleased(NSEvent.modifierFlags)
         } else {
             if panelAnchorTopCenter == nil {
                 panelAnchorTopCenter = defaultPanelAnchorTopCenter()
