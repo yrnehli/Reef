@@ -17,6 +17,14 @@ class Application {
     var pid: pid_t?
     var bundleIdentifier: String?
     var bundleUrl: URL?
+
+    var icon: NSImage? {
+        if let icon = runningApplication?.icon {
+            return icon
+        }
+        guard let bundleUrl else { return nil }
+        return NSWorkspace.shared.icon(forFile: bundleUrl.path)
+    }
     
     init(_ runningApplication: NSRunningApplication) {
         self.runningApplication = runningApplication

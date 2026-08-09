@@ -5,6 +5,7 @@
 //  Window switcher panel UI
 //
 
+import AppKit
 import SwiftUI
 
 struct CyclePanelView: View {
@@ -21,6 +22,15 @@ struct CyclePanelView: View {
             return action.title
         case .app(let application):
             return application.title
+        }
+    }
+
+    private func itemIcon(_ item: CyclePanelItem) -> NSImage? {
+        switch item {
+        case .app(let application):
+            return application.icon
+        case .window, .action:
+            return nil
         }
     }
     
@@ -43,6 +53,7 @@ struct CyclePanelView: View {
                     ForEach(Array(state.items.enumerated()), id: \.offset) { index, item in
                         CyclePanelRow(
                             title: itemTitle(item),
+                            icon: itemIcon(item),
                             isSelected: index == state.selectedIndex
                         )
                         .id(index)
@@ -56,6 +67,7 @@ struct CyclePanelView: View {
                             ForEach(Array(state.items.enumerated()), id: \.offset) { index, item in
                                 CyclePanelRow(
                                     title: itemTitle(item),
+                                    icon: itemIcon(item),
                                     isSelected: index == state.selectedIndex
                                 )
                                 .id(index)
@@ -78,9 +90,11 @@ struct CyclePanelView: View {
 
 struct CyclePanelRow: View {
     let title: String
+    var icon: NSImage? = nil
     let isSelected: Bool
 
     private let rowHeight: CGFloat = 44
+    private let iconSize: CGFloat = 22
     
     var body: some View {
         HStack(spacing: 12) {
@@ -88,13 +102,19 @@ struct CyclePanelRow: View {
             Circle()
                 .fill(isSelected ? Color.accentColor : Color.clear)
                 .frame(width: 6, height: 6)
-//            Image(systemName: "fish.fill")
-//                .opacity(isSelected ? 1.0 : 0.0)
-//                .frame(width: 6, height: 6)
             
-            Text(title)
-                .foregroundColor(isSelected ? .white : .primary)
-                .lineLimit(1)
+            HStack(spacing: 8) {
+                if let icon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .interpolation(.high)
+                        .frame(width: iconSize, height: iconSize)
+                }
+                
+                Text(title)
+                    .foregroundColor(isSelected ? .white : .primary)
+                    .lineLimit(1)
+            }
             
             Spacer()
         }
