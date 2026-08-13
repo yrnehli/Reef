@@ -34,6 +34,8 @@ final class CyclePanel: NSPanel, NSWindowDelegate {
         self.delegate = self
         self.backgroundColor = .clear
         self.hidesOnDeactivate = true
+        self.acceptsMouseMovedEvents = true
+        self.ignoresMouseEvents = false
         
         let effectView = NSVisualEffectView(frame: .zero)
         effectView.autoresizingMask = [.width, .height]
