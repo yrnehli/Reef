@@ -18,6 +18,13 @@ final class CyclePanelController: NSObject {
     private var localFlagsMonitor: Any?
     private var globalFlagsMonitor: Any?
     private var keyDownMonitor: Any?
+    private var mouseMoveMonitor: Any?
+    /// Cursor hover is ignored until the pointer moves after the switcher appears,
+    /// so a cursor already resting on a row does not steal the keyboard selection.
+    private var pointerSelectionEnabled = false
+    private var pointerAnchorLocation = NSPoint.zero
+    private var hoveredIndex: Int?
+    private let pointerSelectionMovementThreshold: CGFloat = 2
     private var currentApplication: Application?
     private var panelAnchorTopCenter: CGPoint?
     private var isCleaningUp = false
@@ -59,7 +66,10 @@ final class CyclePanelController: NSObject {
         let contentView = CyclePanelView(
             state: state,
             onHoverIndex: { [weak self] index in
-                self?.state.selectIndex(index)
+                self?.handleHover(index)
+            },
+            onHoverEnd: { [weak self] index in
+                self?.handleHoverEnd(index)
             },
             onActivateIndex: { [weak self] index in
                 guard let self else { return }
@@ -147,6 +157,7 @@ final class CyclePanelController: NSObject {
 
     private func presentPanelIfNeeded() {
         if !panel.isVisible {
+            beginPointerSelectionGate()
             panelAnchorTopCenter = defaultPanelAnchorTopCenter()
             // Size first so the frame matches content, pinned so the top stays put.
             updatePanelSize()
@@ -352,6 +363,7 @@ final class CyclePanelController: NSObject {
 
         removeFlagsMonitor()
         removeKeyDownMonitor()
+        endPointerSelectionGate()
         state.reset()
         currentApplication = nil
         panelAnchorTopCenter = nil
@@ -365,6 +377,73 @@ final class CyclePanelController: NSObject {
         }
     }
     
+    private func beginPointerSelectionGate() {
+        pointerSelectionEnabled = false
+        hoveredIndex = nil
+        pointerAnchorLocation = NSEvent.mouseLocation
+        removeMouseMoveMonitor()
+        installMouseMoveMonitor()
+    }
+
+    private func endPointerSelectionGate() {
+        pointerSelectionEnabled = false
+        hoveredIndex = nil
+        pointerAnchorLocation = .zero
+        removeMouseMoveMonitor()
+    }
+
+    /// Arms pointer selection once the cursor has moved away from where it was when the switcher opened.
+    @discardableResult
+    private func armPointerSelectionIfMoved() -> Bool {
+        if pointerSelectionEnabled { return true }
+
+        let current = NSEvent.mouseLocation
+        let dx = current.x - pointerAnchorLocation.x
+        let dy = current.y - pointerAnchorLocation.y
+        guard hypot(dx, dy) >= pointerSelectionMovementThreshold else { return false }
+
+        pointerSelectionEnabled = true
+        removeMouseMoveMonitor()
+        return true
+    }
+
+    private func handleHover(_ index: Int) {
+        hoveredIndex = index
+        guard armPointerSelectionIfMoved() else { return }
+        state.selectIndex(index)
+    }
+
+    private func handleHoverEnd(_ index: Int) {
+        guard hoveredIndex == index else { return }
+        hoveredIndex = nil
+    }
+
+    private func handlePointerMovement() {
+        guard armPointerSelectionIfMoved() else { return }
+        if let hoveredIndex {
+            state.selectIndex(hoveredIndex)
+        }
+    }
+
+    private func installMouseMoveMonitor() {
+        guard mouseMoveMonitor == nil else { return }
+
+        mouseMoveMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+        ) { [weak self] event in
+            guard let self else { return event }
+            self.handlePointerMovement()
+            return event
+        }
+    }
+
+    private func removeMouseMoveMonitor() {
+        if let monitor = mouseMoveMonitor {
+            NSEvent.removeMonitor(monitor)
+            mouseMoveMonitor = nil
+        }
+    }
+
     private func installFlagsMonitor() {
         guard localFlagsMonitor == nil, globalFlagsMonitor == nil else { return }
         
@@ -477,6 +556,11 @@ final class CyclePanelController: NSObject {
         let keyMonitor = keyDownMonitor
         if let keyMonitor {
             NSEvent.removeMonitor(keyMonitor)
+        }
+
+        let mouseMonitor = mouseMoveMonitor
+        if let mouseMonitor {
+            NSEvent.removeMonitor(mouseMonitor)
         }
     }
 }

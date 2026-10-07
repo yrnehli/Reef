@@ -11,6 +11,7 @@ import SwiftUI
 struct CyclePanelView: View {
     @ObservedObject var state: CyclePanelState
     var onHoverIndex: (Int) -> Void = { _ in }
+    var onHoverEnd: (Int) -> Void = { _ in }
     var onActivateIndex: (Int) -> Void = { _ in }
 
     private let headerPadding: Double = 12
@@ -48,6 +49,8 @@ struct CyclePanelView: View {
             .onHover { hovering in
                 if hovering {
                     onHoverIndex(index)
+                } else {
+                    onHoverEnd(index)
                 }
             }
             .onTapGesture {
