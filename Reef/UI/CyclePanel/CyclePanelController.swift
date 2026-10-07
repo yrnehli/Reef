@@ -28,6 +28,9 @@ final class CyclePanelController: NSObject {
     private var currentApplication: Application?
     private var panelAnchorTopCenter: CGPoint?
     private var isCleaningUp = false
+    private var hostingView: NSView?
+    private var appliedSwitcherIsDark: Bool?
+    private var appearanceObservers: [NSObjectProtocol] = []
 
     /// Notifies the ⌘Tab interceptor when the app-switcher panel is shown/hidden.
     var appSwitcherVisibilityDidChange: ((Bool) -> Void)?
@@ -57,6 +60,8 @@ final class CyclePanelController: NSObject {
         self.mruTracker = mruTracker
         super.init()
         createPanel()
+        startAppearanceObservation()
+        applySwitcherAppearance()
     }
     
     private func createPanel() {
@@ -79,6 +84,7 @@ final class CyclePanelController: NSObject {
         )
         let hostingView = NSHostingView(rootView: contentView)
         hostingView.translatesAutoresizingMaskIntoConstraints = false
+        self.hostingView = hostingView
         
         guard let containerView = panel.contentView else { return }
         containerView.addSubview(hostingView)
@@ -92,6 +98,43 @@ final class CyclePanelController: NSObject {
         panel.onDidResignKey = { [weak self] in
             self?.resetSwitcherState()
         }
+    }
+
+    private func startAppearanceObservation() {
+        let defaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: UserDefaults.standard,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.applySwitcherAppearance()
+            }
+        }
+        appearanceObservers.append(defaultsObserver)
+
+        let interfaceObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("AppleInterfaceThemeChangedNotification"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            DispatchQueue.main.async {
+                Task { @MainActor in
+                    // effectiveAppearance updates after the theme notification is delivered.
+                    self?.appliedSwitcherIsDark = nil
+                    self?.applySwitcherAppearance()
+                }
+            }
+        }
+        appearanceObservers.append(interfaceObserver)
+    }
+
+    private func applySwitcherAppearance() {
+        let isDark = SwitcherAppearance.preference.resolvesDark
+        guard appliedSwitcherIsDark != isDark else { return }
+        appliedSwitcherIsDark = isDark
+
+        panel.applyChrome(isDark: isDark)
+        hostingView?.appearance = NSAppearance(named: isDark ? .darkAqua : .aqua)
     }
     
     // Called when user presses the configured window-switching shortcut.
@@ -561,6 +604,12 @@ final class CyclePanelController: NSObject {
         let mouseMonitor = mouseMoveMonitor
         if let mouseMonitor {
             NSEvent.removeMonitor(mouseMonitor)
+        }
+
+        let observers = appearanceObservers
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+            DistributedNotificationCenter.default().removeObserver(observer)
         }
     }
 }

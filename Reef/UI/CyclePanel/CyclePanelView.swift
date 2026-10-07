@@ -13,6 +13,19 @@ struct CyclePanelView: View {
     var onHoverIndex: (Int) -> Void = { _ in }
     var onHoverEnd: (Int) -> Void = { _ in }
     var onActivateIndex: (Int) -> Void = { _ in }
+    @AppStorage("appearance") private var appearance = "system"
+    @State private var systemIsDark = SwitcherAppearance.system.resolvesDark
+
+    private var resolvedScheme: ColorScheme {
+        switch appearance {
+        case "light":
+            return .light
+        case "dark":
+            return .dark
+        default:
+            return systemIsDark ? .dark : .light
+        }
+    }
 
     private let headerPadding: Double = 12
     private let maxNonScrollingRows: Int = 5
@@ -65,13 +78,13 @@ struct CyclePanelView: View {
             // Header
             Text(state.applicationTitle)
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundColor(.primary)
                 .lineLimit(1)
                 .padding(.vertical, headerPadding)
 
             
             Divider()
-                .background(Color.white.opacity(0.2))
+                .background(Color.primary.opacity(0.2))
             
             // Window list
             if state.items.count <= maxNonScrollingRows {
@@ -97,6 +110,16 @@ struct CyclePanelView: View {
         }
         .frame(width: 400)
         .background(Color.clear)
+        .preferredColorScheme(resolvedScheme)
+        .onReceive(
+            DistributedNotificationCenter.default().publisher(
+                for: Notification.Name("AppleInterfaceThemeChangedNotification")
+            )
+        ) { _ in
+            DispatchQueue.main.async {
+                systemIsDark = SwitcherAppearance.system.resolvesDark
+            }
+        }
     }
 }
 
@@ -124,7 +147,7 @@ struct CyclePanelRow: View {
                 }
                 
                 Text(title)
-                    .foregroundColor(isSelected ? .white : .primary)
+                    .foregroundColor(.primary)
                     .lineLimit(1)
             }
             

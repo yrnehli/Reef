@@ -56,6 +56,13 @@ struct PreferencesGeneralView: View {
             }
 
             Section {
+                Picker("Appearance:", selection: $appearance) {
+                    Text("Light").tag("light")
+                    Text("Dark").tag("dark")
+                    Text("System").tag("system")
+                }
+                .pickerStyle(.menu)
+
 //                Toggle("Hide menubar icon", isOn: $hideMenubarIcon)
                 Toggle("Show active profile in menu bar", isOn: $showActiveProfileInMenuBar)
 
@@ -75,7 +82,7 @@ struct PreferencesGeneralView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(height: hasAccessibilityPermission ? 224 : 294)
+        .frame(height: hasAccessibilityPermission ? 262 : 332)
         .onReceive(timer) { _ in
             // Poll for permission changes
             hasAccessibilityPermission = AXIsProcessTrusted()
