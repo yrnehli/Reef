@@ -19,6 +19,11 @@ final class CyclePanelController: NSObject {
     private var globalFlagsMonitor: Any?
     private var keyDownMonitor: Any?
     private var mouseMoveMonitor: Any?
+    private var localMouseDownMonitor: Any?
+    private var globalMouseDownMonitor: Any?
+    /// Swallows arrow keys before system shortcuts (⌃ arrows) while a switcher is open.
+    private var arrowKeyTap: CFMachPort?
+    private var arrowKeyTapSource: CFRunLoopSource?
     /// Cursor hover is ignored until the pointer moves after the switcher appears,
     /// so a cursor already resting on a row does not steal the keyboard selection.
     private var pointerSelectionEnabled = false
@@ -34,6 +39,14 @@ final class CyclePanelController: NSObject {
 
     /// Notifies the ⌘Tab interceptor when the app-switcher panel is shown/hidden.
     var appSwitcherVisibilityDidChange: ((Bool) -> Void)?
+
+    nonisolated private static let upArrowKeyCode: UInt16 = 126
+    nonisolated private static let downArrowKeyCode: UInt16 = 125
+    nonisolated private static let leftArrowKeyCode: UInt16 = 123
+    nonisolated private static let rightArrowKeyCode: UInt16 = 124
+    nonisolated private static let arrowKeyCodes: Set<UInt16> = [
+        upArrowKeyCode, downArrowKeyCode, leftArrowKeyCode, rightArrowKeyCode
+    ]
 
     private let panelContentWidth: CGFloat = 400
     private let maxPanelFrameHeightCap: CGFloat = 520
@@ -208,6 +221,8 @@ final class CyclePanelController: NSObject {
             NSApp.activate(ignoringOtherApps: true)
             installFlagsMonitor()
             installKeyDownMonitor()
+            installArrowKeyTap()
+            installOutsideClickMonitor()
             // Modifier may already be up if the user released before monitors were installed
             // (common on quick Alt/⌘Tab). Catch that with a snapshot check.
             activateIfSwitcherModifierWasReleased(NSEvent.modifierFlags)
@@ -406,6 +421,8 @@ final class CyclePanelController: NSObject {
 
         removeFlagsMonitor()
         removeKeyDownMonitor()
+        removeArrowKeyTap()
+        removeOutsideClickMonitor()
         endPointerSelectionGate()
         state.reset()
         currentApplication = nil
@@ -538,6 +555,97 @@ final class CyclePanelController: NSObject {
         }
     }
 
+    /// Move the selection from an arrow key while a switcher is open.
+    /// Up/left go backward; down/right go forward. Returns whether the key was handled.
+    func moveSelection(forArrowKeyCode keyCode: UInt16) -> Bool {
+        guard panel.isVisible else { return false }
+
+        switch keyCode {
+        case Self.upArrowKeyCode, Self.leftArrowKeyCode:
+            cyclePrevious()
+            return true
+        case Self.downArrowKeyCode, Self.rightArrowKeyCode:
+            cycleNext()
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Session tap so ⌃/⌘+arrow moves the selection instead of Mission Control or Spaces.
+    private func installArrowKeyTap() {
+        guard arrowKeyTap == nil else { return }
+        guard AXIsProcessTrusted() else { return }
+
+        let mask =
+            (1 << CGEventType.keyDown.rawValue)
+            | (1 << CGEventType.tapDisabledByTimeout.rawValue)
+            | (1 << CGEventType.tapDisabledByUserInput.rawValue)
+
+        let unmanagedSelf = Unmanaged.passUnretained(self).toOpaque()
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: CGEventMask(mask),
+            callback: { _, type, event, refcon -> Unmanaged<CGEvent>? in
+                guard let refcon else {
+                    return Unmanaged.passUnretained(event)
+                }
+                let controller = Unmanaged<CyclePanelController>.fromOpaque(refcon).takeUnretainedValue()
+                return controller.handleArrowKeyEvent(type: type, event: event)
+            },
+            userInfo: unmanagedSelf
+        ) else {
+            return
+        }
+
+        arrowKeyTap = tap
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        arrowKeyTapSource = source
+        CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+    }
+
+    private func removeArrowKeyTap() {
+        if let arrowKeyTap {
+            CGEvent.tapEnable(tap: arrowKeyTap, enable: false)
+        }
+        if let arrowKeyTapSource {
+            CFRunLoopSourceInvalidate(arrowKeyTapSource)
+        }
+        arrowKeyTap = nil
+        arrowKeyTapSource = nil
+    }
+
+    /// Called from the event-tap callback. Not isolated to the main actor.
+    nonisolated private func handleArrowKeyEvent(
+        type: CGEventType,
+        event: CGEvent
+    ) -> Unmanaged<CGEvent>? {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            DispatchQueue.main.async { [weak self] in
+                guard let tap = self?.arrowKeyTap else { return }
+                CGEvent.tapEnable(tap: tap, enable: true)
+            }
+            return nil
+        }
+
+        guard type == .keyDown else {
+            return Unmanaged.passUnretained(event)
+        }
+
+        let keyCode = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
+        guard Self.arrowKeyCodes.contains(keyCode) else {
+            return Unmanaged.passUnretained(event)
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            _ = self?.moveSelection(forArrowKeyCode: keyCode)
+        }
+        return nil
+    }
+
     private func installKeyDownMonitor() {
         guard keyDownMonitor == nil else { return }
 
@@ -548,6 +656,15 @@ final class CyclePanelController: NSObject {
             if self.panel.isVisible, event.keyCode == 53 {
                 Task { @MainActor in
                     self.hideSwitcher()
+                }
+                return nil
+            }
+
+            // Arrow keys move the selection in both the window and app switchers.
+            if self.panel.isVisible, Self.arrowKeyCodes.contains(event.keyCode) {
+                let keyCode = event.keyCode
+                Task { @MainActor in
+                    _ = self.moveSelection(forArrowKeyCode: keyCode)
                 }
                 return nil
             }
@@ -583,6 +700,54 @@ final class CyclePanelController: NSObject {
             keyDownMonitor = nil
         }
     }
+
+    /// Dismiss on a click outside the panel, same as Escape. Clicks on a row still activate it.
+    private func installOutsideClickMonitor() {
+        guard localMouseDownMonitor == nil, globalMouseDownMonitor == nil else { return }
+
+        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+
+        localMouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            guard let self else { return event }
+            guard self.panel.isVisible, !self.isClickInsidePanel(event) else { return event }
+
+            Task { @MainActor in
+                self.hideSwitcher()
+            }
+            return event
+        }
+
+        // Clicks in other apps are not delivered locally.
+        globalMouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.panel.isVisible else { return }
+                self.hideSwitcher()
+            }
+        }
+    }
+
+    private func isClickInsidePanel(_ event: NSEvent) -> Bool {
+        if event.window === panel { return true }
+
+        let screenLocation: NSPoint
+        if let window = event.window {
+            screenLocation = window.convertPoint(toScreen: event.locationInWindow)
+        } else {
+            screenLocation = NSEvent.mouseLocation
+        }
+        return panel.frame.contains(screenLocation)
+    }
+
+    private func removeOutsideClickMonitor() {
+        if let monitor = localMouseDownMonitor {
+            NSEvent.removeMonitor(monitor)
+            localMouseDownMonitor = nil
+        }
+        if let monitor = globalMouseDownMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalMouseDownMonitor = nil
+        }
+    }
     
     deinit {
         // Capture the monitor in a local variable before deinit (while still on main actor)
@@ -604,6 +769,25 @@ final class CyclePanelController: NSObject {
         let mouseMonitor = mouseMoveMonitor
         if let mouseMonitor {
             NSEvent.removeMonitor(mouseMonitor)
+        }
+
+        let localClickMonitor = localMouseDownMonitor
+        if let localClickMonitor {
+            NSEvent.removeMonitor(localClickMonitor)
+        }
+
+        let globalClickMonitor = globalMouseDownMonitor
+        if let globalClickMonitor {
+            NSEvent.removeMonitor(globalClickMonitor)
+        }
+
+        let arrowTap = arrowKeyTap
+        if let arrowTap {
+            CGEvent.tapEnable(tap: arrowTap, enable: false)
+        }
+        let arrowSource = arrowKeyTapSource
+        if let arrowSource {
+            CFRunLoopSourceInvalidate(arrowSource)
         }
 
         let observers = appearanceObservers
